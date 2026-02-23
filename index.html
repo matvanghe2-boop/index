@@ -1270,26 +1270,28 @@ function refreshData() {
 //  RENDER
 // ═══════════════════════════════════════════════
 function renderDashboard(json) {
-  // Tickers valides uniquement (exclure lignes parasites et totaux)
-  const TICKERS_EXCLUS = ['TOTAL PORTEFEUILLE', 'TOTAL', 'Diagnostic Rapide', 'Score Santé', ''];
+  // 1. Filtrage du Portefeuille (exclure lignes parasites et totaux)
+  const EXCLUS = ['TOTAL PORTEFEUILLE', 'TOTAL', 'DIAGNOSTIC RAPIDE', 'SCORE SANTÉ'];
   const portfolio = (json['PORTFOLIO'] || json['portfolio'] || []).filter(r => {
-    if (!r) return false;
-    const ticker = String(r['Ticker'] || r['ticker'] || '');
-    const valeur = parseFloat(r['Valeur (€)'] || r['valeur'] || 0);
-    // Exclure lignes sans ticker valide, totaux, et lignes avec valeur 0 sans cours
-    if (!ticker) return false;
-    if (TICKERS_EXCLUS.some(ex => ticker.includes(ex))) return false;
-    if (ticker.startsWith('🏆') || ticker.startsWith('🔴') || ticker.startsWith('📊') || ticker.startsWith('⚠')) return false;
-    // Garder si valeur > 0 OU si c'est une vraie ligne (a un cours)
-    const cours = parseFloat(r['Cours (€)'] || 0);
-    return valeur > 0 || cours > 0;
+    const ticker = String(val(r, 'Ticker', 'ticker') || '').trim();
+    if (!ticker || ticker === '') return false;
+    
+    // Filtre les titres, totaux et emojis de diagnostic
+    const tickerUpper = ticker.toUpperCase();
+    if (EXCLUS.some(ex => tickerUpper.includes(ex))) return false;
+    if (['🏆', '🔴', '📊', '⚠'].some(emoji => ticker.startsWith(emoji))) return false;
+
+    // Ne garder que les lignes avec une valeur réelle (Valeur ou Cours > 0)
+    return numVal(r, 'Valeur (€)', 'valeur') > 0 || numVal(r, 'Cours (€)', 'cours') > 0;
   });
+
   const sante = json['Santé PEA'] || json['sante'] || {};
-  const secteurs = (json['Secteurs'] || json['secteurs'] || []).filter(r =>
-    r && (r['Secteur'] || r['secteur']) && (r['Secteur'] !== 'TOTAL') && (r['Valeur (€)'] || 0) > 0
+  const secteurs = (json['Secteurs'] || json['secteurs'] || []).filter(r => 
+    val(r, 'Secteur', 'secteur') && val(r, 'Secteur', 'secteur') !== 'TOTAL' && numVal(r, 'Valeur (€)', 'valeur') > 0
   );
-  const historique = (json['Historique_Patrimoine'] || json['historique'] || []).filter(r =>
-    r && (r['📅 Date'] || r['Date']) && (r['💶 Valeur Totale (€)'] || r['Valeur'] || 0) > 0
+
+  const historique = (json['Historique_Patrimoine'] || json['historique'] || []).filter(r => 
+    val(r, '📅 Date', 'Date') && numVal(r, '💶 Valeur Totale (€)', 'Valeur', 'Valeur Totale (€)') > 0
   );
 
   // Compute totals — cherche la ligne TOTAL PORTEFEUILLE en priorité
