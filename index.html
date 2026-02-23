@@ -1287,11 +1287,27 @@ function renderDashboard(json) {
     if (['🏆', '🔴', '📊', '⚠'].some(e => ticker.startsWith(e))) return false;
     return numVal(r, 'Valeur (€)', 'valeur') > 0 || numVal(r, 'Cours (€)') > 0;
   });
+// 1. Extraction des Secteurs
+  const secteurs = (json['Secteurs'] || []).filter(r => {
+    const nomSecteur = val(r, 'Secteur', 'secteur');
+    return nomSecteur && nomSecteur !== 'TOTAL' && numVal(r, 'Valeur (€)', 'valeur') > 0;
+  });
 
-  const sante = json['Santé PEA'] || {};
-  const secteurs = (json['Secteurs'] || []).filter(r => val(r, 'Secteur') && val(r, 'Secteur') !== 'TOTAL');
-  const historique = json['Historique_Patrimoine'] || [];
+  // 2. Extraction de la Watchlist (depuis l'onglet Santé PEA)
+  // On cherche les lignes qui ont un Ticker mais pas de "Quantité" (donc pas encore achetées)
+  const watchlist = (json['Santé PEA'] || json['PORTFOLIO'] || []).filter(r => {
+    const t = String(val(r, 'Ticker', 'ticker') || '').trim();
+    const q = numVal(r, 'Quantité', 'Qté');
+    return t !== '' && q === 0 && !EXCLUS.some(ex => t.includes(ex));
+  });
 
+  // 3. Extraction de l'Historique
+  const historique = (json['Historique_Patrimoine'] || []).filter(r => 
+    val(r, '📅 Date', 'Date') && numVal(r, '💶 Valeur Totale (€)', 'Valeur') > 0
+  );
+
+  console.log("Secteurs trouvés :", secteurs.length);
+  console.log("Watchlist trouvée :", watchlist.length);
   console.log("Données prêtes :", portfolio.length, "actions trouvées.");
 
   // Compute totals — cherche la ligne TOTAL PORTEFEUILLE en priorité
