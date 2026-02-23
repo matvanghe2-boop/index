@@ -1270,29 +1270,29 @@ function refreshData() {
 //  RENDER
 // ═══════════════════════════════════════════════
 function renderDashboard(json) {
-  // 1. Filtrage du Portefeuille (exclure lignes parasites et totaux)
-  const EXCLUS = ['TOTAL PORTEFEUILLE', 'TOTAL', 'DIAGNOSTIC RAPIDE', 'SCORE SANTÉ'];
-  const portfolio = (json['PORTFOLIO'] || json['portfolio'] || []).filter(r => {
-    const ticker = String(val(r, 'Ticker', 'ticker') || '').trim();
-    if (!ticker || ticker === '') return false;
-    
-    // Filtre les titres, totaux et emojis de diagnostic
-    const tickerUpper = ticker.toUpperCase();
-    if (EXCLUS.some(ex => tickerUpper.includes(ex))) return false;
-    if (['🏆', '🔴', '📊', '⚠'].some(emoji => ticker.startsWith(emoji))) return false;
+  // Si Google renvoie une erreur, on l'affiche et on arrête
+  if (json.error) {
+    console.error("Erreur API Google:", json.error);
+    showAlert('danger', 'Clé API invalide ou erreur Google Sheets');
+    return;
+  }
 
-    // Ne garder que les lignes avec une valeur réelle (Valeur ou Cours > 0)
-    return numVal(r, 'Valeur (€)', 'valeur') > 0 || numVal(r, 'Cours (€)', 'cours') > 0;
+  const EXCLUS = ['TOTAL PORTEFEUILLE', 'TOTAL', 'Diagnostic Rapide', 'Score Santé'];
+  
+  // 1. Filtrage robuste du Portefeuille
+  const portfolio = (json['PORTFOLIO'] || []).filter(r => {
+    const ticker = String(val(r, 'Ticker', 'ticker') || '').trim();
+    if (!ticker) return false;
+    if (EXCLUS.some(ex => ticker.includes(ex))) return false;
+    if (['🏆', '🔴', '📊', '⚠'].some(e => ticker.startsWith(e))) return false;
+    return numVal(r, 'Valeur (€)', 'valeur') > 0 || numVal(r, 'Cours (€)') > 0;
   });
 
-  const sante = json['Santé PEA'] || json['sante'] || {};
-  const secteurs = (json['Secteurs'] || json['secteurs'] || []).filter(r => 
-    val(r, 'Secteur', 'secteur') && val(r, 'Secteur', 'secteur') !== 'TOTAL' && numVal(r, 'Valeur (€)', 'valeur') > 0
-  );
+  const sante = json['Santé PEA'] || {};
+  const secteurs = (json['Secteurs'] || []).filter(r => val(r, 'Secteur') && val(r, 'Secteur') !== 'TOTAL');
+  const historique = json['Historique_Patrimoine'] || [];
 
-  const historique = (json['Historique_Patrimoine'] || json['historique'] || []).filter(r => 
-    val(r, '📅 Date', 'Date') && numVal(r, '💶 Valeur Totale (€)', 'Valeur', 'Valeur Totale (€)') > 0
-  );
+  console.log("Données prêtes :", portfolio.length, "actions trouvées.");
 
   // Compute totals — cherche la ligne TOTAL PORTEFEUILLE en priorité
   let totalValeur = 0, totalPV = 0;
