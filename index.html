@@ -1293,11 +1293,14 @@ function renderDashboard(json) {
   renderCharts(json['Secteurs'] || [], json['Historique_Patrimoine'] || []);
 
   const watchlist = (json['Santé PEA'] || []).filter(r => {
-    const t = String(val(r, 'Ticker', 'ticker') || '').trim();
-    const statut = String(val(r, 'Statut', 'statut') || '');
-    return t !== '' && (statut.includes('Watchlist') || numVal(r, 'Poids réel') === 0);
-  });
-  renderWatchlist(watchlist);
+  const ticker = String(r['Indicateur'] || '').trim();
+  // Ligne valide = commence par EPA:, ETR:, NASDAQ: etc.
+  const isValidTicker = /^(EPA|ETR|NASDAQ|NYSE|AMS):/i.test(ticker);
+  // En watchlist = poids réel vide (Score vide = pas encore en portefeuille)
+  const poidsVide = r['Score'] === '' || r['Score'] === null;
+  return isValidTicker && poidsVide;
+});
+renderWatchlist(watchlist);
 
   // Alerte surexposition
   const surexp = (json['Secteurs'] || []).filter(s =>
@@ -1618,10 +1621,11 @@ function renderWatchlist(watchlist) {
   }
   div.innerHTML = '';
   watchlist.forEach(r => {
-    const ticker  = String(val(r, 'Ticker', 'ticker') || '--');
-    const nom     = String(val(r, 'Nom', 'nom') || '--');
-    const secteur = String(val(r, 'Secteur', 'secteur') || '');
-    const statut  = String(val(r, 'Statut', 'statut') || '');
+    const ticker  = String(r['Indicateur'] || '--');
+    const secteur = String(r['Valeur'] || '');
+    const poids   = r['Max'] ? (parseFloat(r['Max']) * 100).toFixed(0) + '% max' : '';
+    const statut  = '— Watchlist';
+    const nom     = '';
     const d = document.createElement('div');
     d.className = 'watchlist-item';
     d.innerHTML = `
