@@ -1186,30 +1186,26 @@ window.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+// ═══════════════════════════════════════════════
+//  CONNEXION & DÉVERROUILLAGE
+// ═══════════════════════════════════════════════
+
 function handleUnlock() {
-  // 1. On récupère ce qui est tapé dans les cases
   let url = document.getElementById('api-url').value.trim();
   let key = document.getElementById('api-key').value.trim();
 
-  // 2. Si les cases sont vides, on utilise tes codes par défaut automatiquement
-  if (!url) {
-    url = "https://script.google.com/macros/s/AKfycbwwh6nOe9RhFL_14q6rSd51XG9QlXgizxInrfvPxE4enYVp0nLxtSCn_S7_jiS2QkGD/exec";
-  }
-  if (!key) {
-    key = "Mdp2Appscript_PEAlive2.0*";
-  }
+  // Identifiants par défaut si vides
+  if (!url) url = "https://script.google.com/macros/s/AKfycbwwh6nOe9RhFL_14q6rSd51XG9QlXgizxInrfvPxE4enYVp0nLxtSCn_S7_jiS2QkGD/exec";
+  if (!key) key = "Mdp2Appscript_PEAlive2.0*";
 
-  // 3. On enregistre ces valeurs dans les variables globales du site
   API_URL = url;
   API_KEY = key;
 
-  // 4. Mémorisation (si la case est cochée)
   if (document.getElementById('remember-me').checked) {
     localStorage.setItem('pea_api_url', url);
     localStorage.setItem('pea_api_key', key);
   }
 
-  // 5. On déverrouille l'affichage et on va chercher les données
   document.getElementById('lock-screen').style.display = 'none';
   document.getElementById('app').classList.add('visible');
   fetchData();
@@ -1227,10 +1223,18 @@ async function fetchData() {
   }
 }
 
+// ═══════════════════════════════════════════════
+//  AFFICHAGE DU DASHBOARD
+// ═══════════════════════════════════════════════
+
 function renderDashboard(json) {
   if (!json || json.error) {
     console.error("Erreur API:", json?.error);
-    document.querySelector('.alert-banner').style.display = 'block';
+    const banner = document.getElementById('alert-banner');
+    if (banner) {
+        banner.style.display = 'block';
+        banner.textContent = "Erreur : Clé API invalide ou accès refusé.";
+    }
     return;
   }
 
@@ -1241,43 +1245,14 @@ function renderDashboard(json) {
     return t !== '' && !EXCLUS.some(ex => t.includes(ex)) && !['🏆', '🔴', '📊', '⚠'].some(e => t.startsWith(e));
   });
 
-  // 2. Mise à jour Interface
-  updateSummary(json); 
-  renderTable(portfolio);
+  const secteurs = json['Secteurs'] || [];
+  const historique = json['Historique_Patrimoine'] || [];
+  const sante = json['Santé PEA'] || [];
 
-  // 3. Forçage Secteurs & Watchlist
-  const secteursData = json['Secteurs'] || [];
-  const santeData = json['Santé PEA'] || [];
-  
-  if (typeof renderCharts === 'function') {
-    renderCharts(secteursData, json['Historique_Patrimoine'] || []);
-  }
-
-  const watchlist = santeData.filter(r => {
-    const t = String(val(r, 'Ticker', 'ticker') || '').trim();
-    return t !== '' && numVal(r, 'Quantité', 'Qté') === 0;
-  });
-  renderWatchlist(watchlist);
-
-  // Cacher l'erreur si tout est OK
-  document.querySelector('.alert-banner').style.display = 'none';
-  console.log("Dashboard synchronisé :", portfolio.length, "actions.");
-}
-
-  // Nettoyage visuel
-  const banner = document.querySelector('.alert-banner');
-  if (banner) banner.style.display = 'none';
-  
-  console.log("Dashboard mis à jour avec success.");
-}
-
-  console.log("Secteurs trouvés :", secteurs.length);
-  console.log("Watchlist trouvée :", watchlist.length);
-  console.log("Données prêtes :", portfolio.length, "actions trouvées.");
-
-  // Compute totals — cherche la ligne TOTAL PORTEFEUILLE en priorité
+  // 2. Calcul des totaux
   let totalValeur = 0, totalPV = 0;
-  const ligneTotal = (json['PORTFOLIO'] || []).find(r => String(r['Ticker'] || '').includes('TOTAL PORTEFEUILLE'));
+  const ligneTotal = (json['PORTFOLIO'] || []).find(r => String(val(r, 'Ticker') || '').includes('TOTAL PORTEFEUILLE'));
+  
   if (ligneTotal) {
     totalValeur = numVal(ligneTotal, 'Valeur (€)', 'valeur');
     totalPV     = numVal(ligneTotal, 'PV (€)', 'pv');
@@ -1287,40 +1262,34 @@ function renderDashboard(json) {
       totalPV     += numVal(r, 'PV (€)', 'pv');
     });
   }
-
   const totalPVPct = totalValeur > 0 ? ((totalPV / (totalValeur - totalPV)) * 100) : 0;
 
-  // ── HERO ──
+  // 3. Mise à jour de l'entête (Hero)
   document.getElementById('total-value').textContent = fmt(totalValeur);
-  
+  const isPos = totalPV >= 0;
   const pvEurEl = document.getElementById('pv-eur');
   const pvPctEl = document.getElementById('pv-pct');
-  const pvChipEur = document.getElementById('pv-chip-eur');
-  const pvChipPct = document.getElementById('pv-chip-pct');
-  
-  const isPos = totalPV >= 0;
   pvEurEl.textContent = (isPos ? '+' : '') + fmt(totalPV) + ' €';
   pvPctEl.textContent = (isPos ? '+' : '') + totalPVPct.toFixed(2) + '%';
-  pvChipEur.className = 'pv-chip ' + (isPos ? 'positive' : 'negative');
-  pvChipPct.className = 'pv-chip ' + (isPos ? 'positive' : 'negative');
-  pvChipEur.querySelector('span').textContent = isPos ? '▲' : '▼';
+  document.getElementById('pv-chip-eur').className = 'pv-chip ' + (isPos ? 'positive' : 'negative');
+  document.getElementById('pv-chip-pct').className = 'pv-chip ' + (isPos ? 'positive' : 'negative');
+  document.getElementById('nb-lignes-display').textContent = `${portfolio.length} positions actives`;
 
-  document.getElementById('nb-lignes-display').textContent =
-    `${portfolio.length} position${portfolio.length > 1 ? 's' : ''} active${portfolio.length > 1 ? 's' : ''}`;
-
-  // ── HEALTH ──
+  // 4. Santé & Stats
   renderHealth(sante, portfolio);
-
-  // ── STAT CARDS ──
   document.getElementById('stat-positions').textContent = portfolio.length;
-  
-  let best = null, worst = null;
-  portfolio.forEach(r => {
-    const pct  = numVal(r, 'PV (%)', 'pv_pct');
-    const name = String(val(r, 'Ticker', 'ticker') || '').replace('EPA:', '').replace('ETR:', '').replace('NASDAQ:', '');
-    if (pct !== 0) {
-      if (best === null || pct > best.pct) best = { name, pct };
-      if (worst === null || pct < worst.pct) worst = { name, pct };
+  document.getElementById('stat-sectors').textContent = secteurs.filter(s => numVal(s, 'Valeur (€)') > 0).length;
+
+  // 5. Tableaux & Graphiques
+  renderPortfolioTable(portfolio, totalValeur);
+  renderSectors(secteurs);
+  renderHistorique(historique);
+  renderWatchlist(json);
+
+  // 6. Affichage final
+  document.getElementById('loading-state').style.display = 'none';
+  document.getElementById('dashboard-content').style.display = 'block';
+  document.getElementById('alert-banner').style.display = 'none';
     }
   });
   
