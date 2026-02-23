@@ -1284,7 +1284,11 @@ function renderDashboard(json) {
     const t = String(val(r, 'Ticker', 'ticker') || '').trim();
     if (!t) return false;
     if (EXCLUS.some(ex => t.includes(ex))) return false;
-    if (['🏆','🔴','📊','⚠','🏥','📅'].some(e => t.startsWith(e))) return false;
+   // Exclure les lignes dont le ticker est purement numérique (ex: 45, 100...)
+    if (/^\d+$/.test(t)) return false;
+  // Exclure les lignes sans préfixe boursier valide ET sans nom
+    const nom = String(val(r, 'Nom', 'nom') || '').trim();
+    if (!nom && !/^(EPA|ETR|NASDAQ|NYSE|AMS|BIT|SWX):/i.test(t)) return false;
     return numVal(r, 'Cours (€)', 'cours') > 0;
   });
 
