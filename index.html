@@ -1270,41 +1270,50 @@ function refreshData() {
 //  RENDER
 // ═══════════════════════════════════════════════
 function renderDashboard(json) {
-  // Si Google renvoie une erreur, on l'affiche et on arrête
-  if (json.error) {
-    console.error("Erreur API Google:", json.error);
-    showAlert('danger', 'Clé API invalide ou erreur Google Sheets');
+  if (!json || json.error) {
+    console.error("Erreur ou JSON vide");
     return;
   }
 
+  // 1. Filtrage robuste
   const EXCLUS = ['TOTAL PORTEFEUILLE', 'TOTAL', 'Diagnostic Rapide', 'Score Santé'];
-  
-  // 1. Filtrage robuste du Portefeuille
   const portfolio = (json['PORTFOLIO'] || []).filter(r => {
-    const ticker = String(val(r, 'Ticker', 'ticker') || '').trim();
-    if (!ticker) return false;
-    if (EXCLUS.some(ex => ticker.includes(ex))) return false;
-    if (['🏆', '🔴', '📊', '⚠'].some(e => ticker.startsWith(e))) return false;
-    return numVal(r, 'Valeur (€)', 'valeur') > 0 || numVal(r, 'Cours (€)') > 0;
-  });
-// 1. Extraction des Secteurs
-  const secteurs = (json['Secteurs'] || []).filter(r => {
-    const nomSecteur = val(r, 'Secteur', 'secteur');
-    return nomSecteur && nomSecteur !== 'TOTAL' && numVal(r, 'Valeur (€)', 'valeur') > 0;
-  });
-
-  // 2. Extraction de la Watchlist (depuis l'onglet Santé PEA)
-  // On cherche les lignes qui ont un Ticker mais pas de "Quantité" (donc pas encore achetées)
-  const watchlist = (json['Santé PEA'] || json['PORTFOLIO'] || []).filter(r => {
     const t = String(val(r, 'Ticker', 'ticker') || '').trim();
-    const q = numVal(r, 'Quantité', 'Qté');
-    return t !== '' && q === 0 && !EXCLUS.some(ex => t.includes(ex));
+    return t !== '' && !EXCLUS.some(ex => t.toUpperCase().includes(ex.toUpperCase())) && 
+           !['🏆', '🔴', '📊', '⚠'].some(e => t.startsWith(e));
   });
 
-  // 3. Extraction de l'Historique
-  const historique = (json['Historique_Patrimoine'] || []).filter(r => 
-    val(r, '📅 Date', 'Date') && numVal(r, '💶 Valeur Totale (€)', 'Valeur') > 0
-  );
+  // 2. Extraction des autres onglets
+  const secteursData = json['Secteurs'] || json['secteurs'] || [];
+  const santeData = json['Santé PEA'] || json['sante'] || [];
+  const historiqueData = json['Historique_Patrimoine'] || json['historique'] || [];
+
+  // 3. Mise à jour de l'interface (Dashboard & Tableau)
+  // On appelle les fonctions existantes de votre script
+  updateSummary(json); 
+  renderTable(portfolio);
+
+  // 4. Forçage de la Watchlist
+  const watchlist = santeData.filter(r => {
+    const t = String(val(r, 'Ticker', 'ticker') || '').trim();
+    return t !== '' && numVal(r, 'Quantité', 'Qté') === 0;
+  });
+  renderWatchlist(watchlist);
+
+  // 5. Forçage des Graphiques (Secteurs & Historique)
+  // On s'assure que Chart.js reçoit bien les données
+  if (typeof renderCharts === 'function') {
+    renderCharts(secteursData, historiqueData);
+  } else if (typeof updateCharts === 'function') {
+    updateCharts(json);
+  }
+
+  // Nettoyage visuel
+  const banner = document.querySelector('.alert-banner');
+  if (banner) banner.style.display = 'none';
+  
+  console.log("Dashboard mis à jour avec success.");
+}
 
   console.log("Secteurs trouvés :", secteurs.length);
   console.log("Watchlist trouvée :", watchlist.length);
