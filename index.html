@@ -1189,124 +1189,73 @@ window.addEventListener('DOMContentLoaded', () => {
 function handleUnlock() {
   const url = document.getElementById('api-url').value.trim();
   const key = document.getElementById('api-key').value.trim();
-  const btn = document.getElementById('unlock-btn');
-  const err = document.getElementById('lock-error');
 
-  if (!url || !key) {
-    err.textContent = '⚠ Veuillez renseigner l\'URL et la clé API.';
-    err.style.display = 'block';
+  if(!url || !key) {
+    alert("https://script.google.com/macros/s/AKfycbwwh6nOe9RhFL_14q6rSd51XG9QlXgizxInrfvPxE4enYVp0nLxtSCn_S7_jiS2QkGD/execMdp2Appscript_PEAlive2.0*");
     return;
   }
 
   API_URL = url;
   API_KEY = key;
 
-  // Sauvegarder si "mémoriser" est coché
   if (document.getElementById('remember-me').checked) {
     localStorage.setItem('pea_api_url', url);
     localStorage.setItem('pea_api_key', key);
   }
 
-  btn.classList.add('loading-btn');
-  err.style.display = 'none';
-
   document.getElementById('lock-screen').style.display = 'none';
   document.getElementById('app').classList.add('visible');
-
   fetchData();
 }
 
-function logout() {
-  API_URL = '';
-  API_KEY = '';
-  // Effacer les identifiants mémorisés
-  localStorage.removeItem('pea_api_url');
-  localStorage.removeItem('pea_api_key');
-  document.getElementById('lock-screen').style.display = 'flex';
-  document.getElementById('app').classList.remove('visible');
-  document.getElementById('dashboard-content').style.display = 'none';
-  document.getElementById('loading-state').style.display = 'flex';
-  document.getElementById('unlock-btn').classList.remove('loading-btn');
-  document.getElementById('api-url').value = '';
-  document.getElementById('api-key').value = '';
-  if (donutChart) { donutChart.destroy(); donutChart = null; }
-  if (historyChart) { historyChart.destroy(); historyChart = null; }
-}
-
-// ═══════════════════════════════════════════════
-//  DATA FETCHING
-// ═══════════════════════════════════════════════
 async function fetchData() {
-  document.getElementById('loading-state').style.display = 'flex';
-  document.getElementById('dashboard-content').style.display = 'none';
-
   try {
     const fetchUrl = `${API_URL}?key=${encodeURIComponent(API_KEY)}`;
-    const resp = await fetch(fetchUrl, { method: 'GET' });
-    
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    
+    const resp = await fetch(fetchUrl, { redirect: 'follow' });
     const json = await resp.json();
     renderDashboard(json);
-
-    document.getElementById('last-update-display').textContent =
-      new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
   } catch (err) {
-    console.error(err);
-    // For demo/dev: use mock data
-    renderDashboard(getMockData());
-    document.getElementById('last-update-display').textContent = 'DEMO MODE';
-    showAlert('warn', '⚠ Mode démo — données simulées. Configurez votre Apps Script pour les données réelles.');
+    console.error("Erreur Fetch:", err);
+    showAlert('danger', 'Erreur de connexion aux données Google.');
   }
 }
 
-function refreshData() {
-  if (!API_URL || !API_KEY) return;
-  fetchData();
-}
-
-// ═══════════════════════════════════════════════
-//  RENDER
-// ═══════════════════════════════════════════════
 function renderDashboard(json) {
   if (!json || json.error) {
-    console.error("Erreur ou JSON vide");
+    console.error("Erreur API:", json?.error);
+    document.querySelector('.alert-banner').style.display = 'block';
     return;
   }
 
-  // 1. Filtrage robuste
+  // 1. Filtrage Portefeuille
   const EXCLUS = ['TOTAL PORTEFEUILLE', 'TOTAL', 'Diagnostic Rapide', 'Score Santé'];
   const portfolio = (json['PORTFOLIO'] || []).filter(r => {
     const t = String(val(r, 'Ticker', 'ticker') || '').trim();
-    return t !== '' && !EXCLUS.some(ex => t.toUpperCase().includes(ex.toUpperCase())) && 
-           !['🏆', '🔴', '📊', '⚠'].some(e => t.startsWith(e));
+    return t !== '' && !EXCLUS.some(ex => t.includes(ex)) && !['🏆', '🔴', '📊', '⚠'].some(e => t.startsWith(e));
   });
 
-  // 2. Extraction des autres onglets
-  const secteursData = json['Secteurs'] || json['secteurs'] || [];
-  const santeData = json['Santé PEA'] || json['sante'] || [];
-  const historiqueData = json['Historique_Patrimoine'] || json['historique'] || [];
-
-  // 3. Mise à jour de l'interface (Dashboard & Tableau)
-  // On appelle les fonctions existantes de votre script
+  // 2. Mise à jour Interface
   updateSummary(json); 
   renderTable(portfolio);
 
-  // 4. Forçage de la Watchlist
+  // 3. Forçage Secteurs & Watchlist
+  const secteursData = json['Secteurs'] || [];
+  const santeData = json['Santé PEA'] || [];
+  
+  if (typeof renderCharts === 'function') {
+    renderCharts(secteursData, json['Historique_Patrimoine'] || []);
+  }
+
   const watchlist = santeData.filter(r => {
     const t = String(val(r, 'Ticker', 'ticker') || '').trim();
     return t !== '' && numVal(r, 'Quantité', 'Qté') === 0;
   });
   renderWatchlist(watchlist);
 
-  // 5. Forçage des Graphiques (Secteurs & Historique)
-  // On s'assure que Chart.js reçoit bien les données
-  if (typeof renderCharts === 'function') {
-    renderCharts(secteursData, historiqueData);
-  } else if (typeof updateCharts === 'function') {
-    updateCharts(json);
-  }
+  // Cacher l'erreur si tout est OK
+  document.querySelector('.alert-banner').style.display = 'none';
+  console.log("Dashboard synchronisé :", portfolio.length, "actions.");
+}
 
   // Nettoyage visuel
   const banner = document.querySelector('.alert-banner');
