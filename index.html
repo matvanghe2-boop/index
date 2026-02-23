@@ -1187,22 +1187,29 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 function handleUnlock() {
-  const url = document.getElementById('api-url').value.trim();
-  const key = document.getElementById('api-key').value.trim();
+  // 1. On récupère ce qui est tapé dans les cases
+  let url = document.getElementById('api-url').value.trim();
+  let key = document.getElementById('api-key').value.trim();
 
-  if(!url || !key) {
-    alert("https://script.google.com/macros/s/AKfycbwwh6nOe9RhFL_14q6rSd51XG9QlXgizxInrfvPxE4enYVp0nLxtSCn_S7_jiS2QkGD/execMdp2Appscript_PEAlive2.0*");
-    return;
+  // 2. Si les cases sont vides, on utilise tes codes par défaut automatiquement
+  if (!url) {
+    url = "https://script.google.com/macros/s/AKfycbwwh6nOe9RhFL_14q6rSd51XG9QlXgizxInrfvPxE4enYVp0nLxtSCn_S7_jiS2QkGD/exec";
+  }
+  if (!key) {
+    key = "Mdp2Appscript_PEAlive2.0*";
   }
 
+  // 3. On enregistre ces valeurs dans les variables globales du site
   API_URL = url;
   API_KEY = key;
 
+  // 4. Mémorisation (si la case est cochée)
   if (document.getElementById('remember-me').checked) {
     localStorage.setItem('pea_api_url', url);
     localStorage.setItem('pea_api_key', key);
   }
 
+  // 5. On déverrouille l'affichage et on va chercher les données
   document.getElementById('lock-screen').style.display = 'none';
   document.getElementById('app').classList.add('visible');
   fetchData();
