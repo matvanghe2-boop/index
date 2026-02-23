@@ -929,7 +929,7 @@
       <input type="password" id="api-key" placeholder="Votre clé secrète" autocomplete="off">
     </div>
 
-    <button class="lock-btn" id="unlock-btn" onclick="handleUnlock()">
+    <button class="lock-btn" id="unlock-btn" onclick="handleUnlock()" type="button">
       <span class="btn-text">ACCÉDER AU DASHBOARD →</span>
       <span class="btn-spinner"></span>
     </button>
@@ -1156,7 +1156,9 @@ window.addEventListener('DOMContentLoaded', () => {
   const savedUrl = localStorage.getItem('pea_api_url');
   const savedKey = localStorage.getItem('pea_api_key');
 
-  if (savedUrl) document.getElementById('api-url').value = savedUrl;
+  if (!savedUrl) {
+    document.getElementById('api-url').value = "https://script.google.com/macros/s/AKfycbw2kGmLiaGUIA3Ds_Un0ZL2eTruSJCgiIGDWaBPJcrF9ta3RQK_3vAX5nllmgDV9iTu/exec";
+}
   if (savedKey) document.getElementById('api-key').value = savedKey;
 
   // Si les deux sont mémorisés → connexion automatique
@@ -1170,8 +1172,11 @@ window.addEventListener('DOMContentLoaded', () => {
 
   // Entrée sur URL → focus sur clé
   document.getElementById('api-url').addEventListener('keydown', e => {
-    if (e.key === 'Enter') document.getElementById('api-key').focus();
-  });
+    if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        document.getElementById('api-key').focus();
+    }
+});
 
   // Entrée sur clé → connexion
   document.getElementById('api-key').addEventListener('keydown', e => {
