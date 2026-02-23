@@ -1190,11 +1190,12 @@ window.addEventListener('DOMContentLoaded', () => {
 //  CONNEXION & DÉVERROUILLAGE
 // ═══════════════════════════════════════════════
 
+// --- 1. GESTION DE LA CONNEXION ---
 function handleUnlock() {
   let url = document.getElementById('api-url').value.trim();
   let key = document.getElementById('api-key').value.trim();
 
-  // Identifiants par défaut si vides
+  // Codes par défaut si vides
   if (!url) url = "https://script.google.com/macros/s/AKfycbwwh6nOe9RhFL_14q6rSd51XG9QlXgizxInrfvPxE4enYVp0nLxtSCn_S7_jiS2QkGD/exec";
   if (!key) key = "Mdp2Appscript_PEAlive2.0*";
 
@@ -1223,523 +1224,61 @@ async function fetchData() {
   }
 }
 
-// ═══════════════════════════════════════════════
-//  AFFICHAGE DU DASHBOARD
-// ═══════════════════════════════════════════════
-
+// --- 2. AFFICHAGE DES DONNÉES ---
 function renderDashboard(json) {
   if (!json || json.error) {
     console.error("Erreur API:", json?.error);
-    const banner = document.getElementById('alert-banner');
-    if (banner) {
-        banner.style.display = 'block';
-        banner.textContent = "Erreur : Clé API invalide ou accès refusé.";
-    }
+    showAlert('danger', 'Clé API invalide.');
     return;
   }
 
-  // 1. Filtrage Portefeuille
+  // Filtrage du portfolio
   const EXCLUS = ['TOTAL PORTEFEUILLE', 'TOTAL', 'Diagnostic Rapide', 'Score Santé'];
   const portfolio = (json['PORTFOLIO'] || []).filter(r => {
     const t = String(val(r, 'Ticker', 'ticker') || '').trim();
     return t !== '' && !EXCLUS.some(ex => t.includes(ex)) && !['🏆', '🔴', '📊', '⚠'].some(e => t.startsWith(e));
   });
 
-  const secteurs = json['Secteurs'] || [];
-  const historique = json['Historique_Patrimoine'] || [];
-  const sante = json['Santé PEA'] || [];
-
-  // 2. Calcul des totaux
-  let totalValeur = 0, totalPV = 0;
-  const ligneTotal = (json['PORTFOLIO'] || []).find(r => String(val(r, 'Ticker') || '').includes('TOTAL PORTEFEUILLE'));
+  // Appel des fonctions d'affichage
+  updateSummary(json);
+  renderTable(portfolio);
   
-  if (ligneTotal) {
-    totalValeur = numVal(ligneTotal, 'Valeur (€)', 'valeur');
-    totalPV     = numVal(ligneTotal, 'PV (€)', 'pv');
-  } else {
-    portfolio.forEach(r => {
-      totalValeur += numVal(r, 'Valeur (€)', 'valeur');
-      totalPV     += numVal(r, 'PV (€)', 'pv');
-    });
+  if (typeof renderCharts === 'function') {
+    renderCharts(json['Secteurs'] || [], json['Historique_Patrimoine'] || []);
   }
-  const totalPVPct = totalValeur > 0 ? ((totalPV / (totalValeur - totalPV)) * 100) : 0;
 
-  // 3. Mise à jour de l'entête (Hero)
-  document.getElementById('total-value').textContent = fmt(totalValeur);
-  const isPos = totalPV >= 0;
-  const pvEurEl = document.getElementById('pv-eur');
-  const pvPctEl = document.getElementById('pv-pct');
-  pvEurEl.textContent = (isPos ? '+' : '') + fmt(totalPV) + ' €';
-  pvPctEl.textContent = (isPos ? '+' : '') + totalPVPct.toFixed(2) + '%';
-  document.getElementById('pv-chip-eur').className = 'pv-chip ' + (isPos ? 'positive' : 'negative');
-  document.getElementById('pv-chip-pct').className = 'pv-chip ' + (isPos ? 'positive' : 'negative');
-  document.getElementById('nb-lignes-display').textContent = `${portfolio.length} positions actives`;
+  // Watchlist (lignes avec Qté = 0 dans Santé PEA)
+  const watchlist = (json['Santé PEA'] || []).filter(r => {
+    const t = String(val(r, 'Ticker') || '').trim();
+    return t !== '' && numVal(r, 'Valeur (€)') === 0;
+  });
+  renderWatchlist(watchlist);
 
-  // 4. Santé & Stats
-  renderHealth(sante, portfolio);
-  document.getElementById('stat-positions').textContent = portfolio.length;
-  document.getElementById('stat-sectors').textContent = secteurs.filter(s => numVal(s, 'Valeur (€)') > 0).length;
-
-  // 5. Tableaux & Graphiques
-  renderPortfolioTable(portfolio, totalValeur);
-  renderSectors(secteurs);
-  renderHistorique(historique);
-  renderWatchlist(json);
-
-  // 6. Affichage final
+  // Masquage du chargement
   document.getElementById('loading-state').style.display = 'none';
   document.getElementById('dashboard-content').style.display = 'block';
-  document.getElementById('alert-banner').style.display = 'none';
-    }
-  });
-  
-  if (best) {
-    document.getElementById('stat-best').textContent = best.name;
-    document.getElementById('stat-best-pct').textContent = '+' + (best.pct * 100).toFixed(1) + '%';
-  }
-  if (worst) {
-    document.getElementById('stat-worst').textContent = worst.name;
-    document.getElementById('stat-worst-pct').textContent = (worst.pct * 100).toFixed(1) + '%';
-  }
-
-  const activeSectors = secteurs.filter(s => (s['Valeur (€)'] || 0) > 0);
-  document.getElementById('stat-sectors').textContent = activeSectors.length;
-
-  // ── PORTFOLIO TABLE ──
-  renderPortfolioTable(portfolio, totalValeur);
-
-  // ── SECTORS ──
-  renderSectors(secteurs);
-
-  // ── HISTORIQUE ──
-  renderHistorique(historique);
-
-  // ── WATCHLIST ──
-  renderWatchlist(json);
-
-  // ── SHOW CONTENT ──
-  document.getElementById('loading-state').style.display = 'none';
-  document.getElementById('dashboard-content').style.display = 'block';
-
-  // Alerts
-  const surtExp = secteurs.filter(s => s['⚠️ Alerte'] && s['⚠️ Alerte'].includes('Surexposé'));
-  if (surtExp.length > 0) {
-    showAlert('danger', `🔴 SUREXPOSITION : ${surtExp.map(s => s['Secteur'] + ' (' + ((s['Poids (%)'] || 0) * 100).toFixed(1) + '%)').join(', ')} — Diversification insuffisante`);
-  }
 }
 
-function renderHealth(sante, portfolio) {
-  // Try to extract health score from JSON structure
-  let score = 0;
-  let label = '';
-  let details = [];
-
-  if (sante && typeof sante === 'object') {
-    // If it's an array (rows from sheet)
-    if (Array.isArray(sante)) {
-      const scoreRow = sante.find(r => r && JSON.stringify(r).includes('SCORE DE SANTÉ GLOBAL'));
-      if (scoreRow) {
-        const vals = Object.values(scoreRow).filter(v => typeof v === 'number');
-        if (vals.length > 0) score = Math.max(...vals);
-      }
-      const labelRow = sante.find(r => r && (JSON.stringify(r).includes('FRAGILE') || JSON.stringify(r).includes('BON') || JSON.stringify(r).includes('EXCELLENT') || JSON.stringify(r).includes('SOLIDE')));
-      if (labelRow) label = Object.values(labelRow).find(v => typeof v === 'string' && v.length > 3) || '';
-    } else {
-      score = sante.score || sante.Score || 0;
-      label = sante.label || '';
-    }
-  }
-
-  // Compute from portfolio if score not found
-  if (!score) {
-    score = computeHealthScore(portfolio);
-    label = getHealthLabel(score);
-  }
-
-  const scoreColor = score >= 75 ? 'var(--accent2)' : score >= 50 ? 'var(--warn)' : 'var(--danger)';
-  const scoreEl = document.getElementById('health-score-display');
-  scoreEl.textContent = score + '/100';
-  scoreEl.style.color = scoreColor;
-
-  document.getElementById('health-label').textContent = label || getHealthLabel(score);
-  document.getElementById('health-label').style.color = scoreColor;
-  
-  setTimeout(() => {
-    document.getElementById('health-bar').style.width = score + '%';
-  }, 300);
-
-  // Mini detail cards
-  const div = document.getElementById('health-details');
-  const nbActif  = portfolio.filter(p => numVal(p, 'Valeur (€)', 'valeur') > 0).length;
-  const maxPoids = portfolio.reduce((m, p) => Math.max(m, numVal(p, 'Poids(%)', 'Poids (%)', 'poids')), 0);
-  const avgMarge = (() => {
-    const withMarge = portfolio.filter(p => val(p, 'Marge de Sécurité (%)', 'marge') != null && val(p, 'Marge de Sécurité (%)', 'marge') !== '' && val(p, 'Marge de Sécurité (%)', 'marge') !== '--');
-    if (!withMarge.length) return 0;
-    return withMarge.reduce((a, p) => a + numVal(p, 'Marge de Sécurité (%)', 'marge'), 0) / withMarge.length;
-  })();
-
-  div.innerHTML = `
-    <div class="health-item">
-      <div class="health-item-label">LIGNES ACTIVES</div>
-      <div class="health-item-val">${nbActif}</div>
-    </div>
-    <div class="health-item">
-      <div class="health-item-label">MAX CONCENTRATION</div>
-      <div class="health-item-val" style="color:${maxPoids > 0.35 ? 'var(--danger)' : 'var(--accent)'}">${(maxPoids * 100).toFixed(1)}%</div>
-    </div>
-    <div class="health-item">
-      <div class="health-item-label">MARGE SÉCU MOY.</div>
-      <div class="health-item-val">${(avgMarge * 100).toFixed(1)}%</div>
-    </div>
-    <div class="health-item">
-      <div class="health-item-label">SCORE</div>
-      <div class="health-item-val" style="color:${scoreColor}">${score} pts</div>
-    </div>
-  `;
-}
-
-function computeHealthScore(portfolio) {
-  let score = 0;
-  const n = portfolio.filter(p => numVal(p, 'Valeur (€)', 'valeur') > 0).length;
-  if (n >= 5) score += 25; else if (n === 4) score += 18; else if (n === 3) score += 10;
-  
-  const maxPoids = portfolio.reduce((m, p) => Math.max(m, numVal(p, 'Poids(%)', 'Poids (%)', 'poids')), 0);
-  const rouge = portfolio.filter(p => numVal(p, 'Poids(%)', 'Poids (%)', 'poids') > 0.2).length;
-  if (rouge === 0) score += 25; else if (rouge === 1) score += 12;
-  
-  const withMarge = portfolio.filter(p => {
-    const m = val(p, 'Marge de Sécurité (%)', 'marge');
-    return m != null && m !== '' && m !== '--';
-  });
-  const avgMarge = withMarge.length
-    ? withMarge.reduce((a, p) => a + numVal(p, 'Marge de Sécurité (%)', 'marge'), 0) / withMarge.length
-    : 0;
-  if (avgMarge > 0.2) score += 25; else if (avgMarge > 0.1) score += 18; else if (avgMarge > 0) score += 10;
-  
-  if (maxPoids < 0.25) score += 25; else if (maxPoids < 0.3) score += 18; else if (maxPoids < 0.35) score += 10; else if (maxPoids < 0.4) score += 5;
-  
-  return Math.min(100, score);
-}
-
-function getHealthLabel(score) {
-  if (score >= 80) return '🟢 Portefeuille SOLIDE';
-  if (score >= 65) return '🟡 Portefeuille CORRECT';
-  if (score >= 50) return '🟠 Portefeuille FRAGILE';
-  return '🔴 Portefeuille À RISQUE';
-}
-
-function renderPortfolioTable(portfolio, totalValeur) {
-  document.getElementById('portfolio-count-badge').textContent = portfolio.length + ' titres';
-  
-  const tbody = document.getElementById('portfolio-tbody');
-  tbody.innerHTML = '';
-
-  portfolio.sort((a, b) => numVal(b, 'Valeur (€)', 'valeur') - numVal(a, 'Valeur (€)', 'valeur'));
-
-  portfolio.forEach(r => {
-    const pv     = numVal(r, 'PV (€)', 'pv');
-    const pvPct  = numVal(r, 'PV (%)', 'pv_pct') * 100;
-    const varJour= numVal(r, 'Var. Jour', 'var_jour') * 100;
-    const poids  = numVal(r, 'Poids(%)', 'Poids (%)', 'poids') * 100;
-    const signal = String(val(r, 'Signal', 'signal') || '--');
-    const ticker = String(val(r, 'Ticker', 'ticker') || '')
-      .replace('EPA:', '').replace('ETR:', '').replace('NASDAQ:', '');
-    const nom    = String(val(r, 'Nom', 'nom') || '');
-    const qte    = numVal(r, 'Quantité', 'quantite');
-    const pru    = numVal(r, 'PRU (€)', 'pru');
-    const cours  = numVal(r, 'Cours (€)', 'cours');
-    const valeur = numVal(r, 'Valeur (€)', 'valeur');
-
-    const pvClass  = pv >= 0 ? 'positive-text' : 'negative-text';
-    const varClass = varJour >= 0 ? 'positive-text' : 'negative-text';
-
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><span class="ticker-cell">${escH(ticker)}</span></td>
-      <td><span class="name-cell" title="${escH(nom)}">${escH(nom.substring(0, 25))}${nom.length > 25 ? '…' : ''}</span></td>
-      <td class="num-cell">${fmt(qte, 0)}</td>
-      <td class="num-cell">${fmt(pru)} €</td>
-      <td class="num-cell">${fmt(cours)} €</td>
-      <td class="num-cell ${varClass}">${varJour >= 0 ? '+' : ''}${varJour.toFixed(2)}%</td>
-      <td class="num-cell">${fmt(valeur)} €</td>
-      <td class="num-cell ${pvClass}">${pv >= 0 ? '+' : ''}${fmt(pv)} €</td>
-      <td class="num-cell ${pvClass}">${pvPct >= 0 ? '+' : ''}${pvPct.toFixed(2)}%</td>
-      <td>
-        <div class="weight-bar-wrap">
-          <div class="weight-bar"><div class="weight-bar-inner" style="width:${Math.min(poids * 2, 100)}%"></div></div>
-          <span style="font-size:10px;font-family:'Space Mono',monospace;color:var(--text3)">${poids.toFixed(1)}%</span>
-        </div>
-      </td>
-      <td>${renderSignal(signal)}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-function renderSignal(signal) {
-  const s = (signal || '').toLowerCase();
-  let cls = 'signal-neutral';
-  let icon = '◦';
-  if (s.includes('achat') || s.includes('buy')) { cls = 'signal-buy'; icon = '▲'; }
-  else if (s.includes('vente') || s.includes('sell')) { cls = 'signal-sell'; icon = '▼'; }
-  else if (s.includes('conserver') || s.includes('hold')) { cls = 'signal-hold'; icon = '◆'; }
-  else if (s.includes('opportunit')) { cls = 'signal-opportunity'; icon = '◈'; }
-  else if (s === '--') return `<span class="signal signal-neutral">—</span>`;
-  
-  return `<span class="signal ${cls}">${icon} ${signal}</span>`;
-}
-
-function renderSectors(secteurs) {
-  const active = secteurs.filter(s => (s['Valeur (€)'] || 0) > 0);
-  const labels = active.map(s => s['Secteur']);
-  const values = active.map(s => s['Valeur (€)'] || 0);
-
-  // Destroy old
-  if (donutChart) { donutChart.destroy(); donutChart = null; }
-
-  const ctx = document.getElementById('donut-chart').getContext('2d');
-  donutChart = new Chart(ctx, {
-    type: 'doughnut',
-    data: {
-      labels,
-      datasets: [{
-        data: values,
-        backgroundColor: SECTOR_COLORS.slice(0, labels.length).map(c => c + 'cc'),
-        borderColor: SECTOR_COLORS.slice(0, labels.length),
-        borderWidth: 1,
-        hoverOffset: 8
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      cutout: '65%',
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: ctx => ` ${ctx.label}: ${fmt(ctx.parsed)} € (${(ctx.parsed / values.reduce((a,b)=>a+b,0)*100).toFixed(1)}%)`
-          },
-          backgroundColor: '#0d1117',
-          borderColor: '#1e2d3d',
-          borderWidth: 1,
-          titleFont: { family: 'Space Mono' },
-          bodyFont: { family: 'Space Mono', size: 11 },
-          bodyColor: '#e2e8f0',
-          titleColor: '#00d4ff'
-        }
-      }
-    }
-  });
-
-  // Sector list
-  const listEl = document.getElementById('sector-list');
-  listEl.innerHTML = '';
-  active.forEach((s, i) => {
-    const pv = parseFloat(s['PV (€)'] || 0);
-    const poids = parseFloat(s['Poids (%)'] || 0) * 100;
-    const alert = s['⚠️ Alerte'] || '';
-    const alertColor = alert.includes('rouge') || alert.includes('Surexposé') ? 'var(--danger)' : alert.includes('Surveiller') ? 'var(--warn)' : 'var(--accent2)';
-
-    const div = document.createElement('div');
-    div.className = 'sector-row';
-    div.innerHTML = `
-      <div class="sector-color" style="background:${SECTOR_COLORS[i] || '#888'}"></div>
-      <div class="sector-name">${escH(s['Secteur'])}</div>
-      <div class="sector-poids">${poids.toFixed(1)}%</div>
-      <div class="sector-pv ${pv >= 0 ? 'positive-text' : 'negative-text'}">${pv >= 0 ? '+' : ''}${fmt(pv)} €</div>
-      <div class="sector-alert" style="color:${alertColor};border-color:${alertColor}33">${escH(alert)}</div>
-    `;
-    listEl.appendChild(div);
-  });
-}
-
-function renderHistorique(historique) {
-  document.getElementById('hist-count-badge').textContent = historique.length + ' points';
-
-  const pts = historique
-    .filter(r => {
-      const d = r['📅 Date'] || r['Date'];
-      const v = r['💶 Valeur Totale (€)'] || r['Valeur Totale'] || r['Valeur'];
-      return d && v;
-    })
-    .map(r => ({
-      date: new Date(r['📅 Date'] || r['Date']),
-      val: parseFloat(r['💶 Valeur Totale (€)'] || r['Valeur Totale'] || r['Valeur']),
-      cac: parseFloat(r['📉 CAC 40'] || r['CAC 40'] || 0),
-      b100: parseFloat(r['🏦 Base 100 — Moi'] || r['Base 100 Moi'] || 0)
-    }))
-    .sort((a, b) => a.date - b.date);
-
-  if (historyChart) { historyChart.destroy(); historyChart = null; }
-
-  const ctx = document.getElementById('history-chart').getContext('2d');
-  
-  const gradient = ctx.createLinearGradient(0, 0, 0, 280);
-  gradient.addColorStop(0, 'rgba(0, 212, 255, 0.2)');
-  gradient.addColorStop(1, 'rgba(0, 212, 255, 0)');
-
-  historyChart = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: pts.map(p => p.date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: pts.length > 30 ? '2-digit' : undefined })),
-      datasets: [{
-        label: 'Valeur Portefeuille (€)',
-        data: pts.map(p => p.val),
-        borderColor: '#00d4ff',
-        backgroundColor: gradient,
-        borderWidth: 2,
-        pointRadius: pts.length > 20 ? 0 : 3,
-        pointBackgroundColor: '#00d4ff',
-        tension: 0.4,
-        fill: true
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: '#0d1117',
-          borderColor: '#1e2d3d',
-          borderWidth: 1,
-          titleFont: { family: 'Space Mono', size: 11 },
-          bodyFont: { family: 'Space Mono', size: 11 },
-          bodyColor: '#e2e8f0',
-          titleColor: '#00d4ff',
-          callbacks: {
-            label: ctx => ` ${fmt(ctx.parsed.y)} €`
-          }
-        }
-      },
-      scales: {
-        x: {
-          grid: { color: 'rgba(30,45,61,0.5)', drawBorder: false },
-          ticks: { color: '#4a6279', font: { family: 'Space Mono', size: 10 }, maxTicksLimit: 8 }
-        },
-        y: {
-          grid: { color: 'rgba(30,45,61,0.5)', drawBorder: false },
-          ticks: {
-            color: '#4a6279',
-            font: { family: 'Space Mono', size: 10 },
-            callback: v => fmt(v) + ' €'
-          }
-        }
-      }
-    }
-  });
-}
-
-function renderWatchlist(json) {
-  const sante = json['Santé PEA'] || [];
-  const watchlist = Array.isArray(sante)
-    ? sante.filter(r => r && r['Statut'] && r['Statut'].includes('Watchlist'))
-    : [];
-
-  const div = document.getElementById('watchlist-body');
-  
-  if (watchlist.length === 0) {
-    div.innerHTML = '<div style="padding:24px;color:var(--text3);font-size:13px;font-family:\'Space Mono\',monospace;">Aucune valeur en watchlist détectée dans les données.</div>';
-    return;
-  }
-
-  div.innerHTML = '';
-  watchlist.forEach(r => {
-    const d = document.createElement('div');
-    d.className = 'watchlist-item';
-    d.innerHTML = `
-      <div class="wl-ticker">${escH(r['Ticker'] || r['ticker'] || '--')}</div>
-      <div class="wl-name">${escH(r['Nom'] || r['nom'] || '--')}</div>
-      <div class="wl-status">${escH(r['Secteur'] || '')}</div>
-      <div class="wl-status">${escH(r['Statut'] || '')}</div>
-    `;
-    div.appendChild(d);
-  });
-}
-
-// ═══════════════════════════════════════════════
-//  UTILITAIRES
-// ═══════════════════════════════════════════════
-
-// Lecture flexible des clés (gère espaces, casse, variantes)
-function val(obj, ...keys) {
-  for (const k of keys) {
-    if (obj[k] !== undefined && obj[k] !== null && obj[k] !== '') return obj[k];
-    // Cherche sans espace
-    const kNoSpace = k.replace(/\s/g, '');
-    for (const ok of Object.keys(obj)) {
-      if (ok.replace(/\s/g, '') === kNoSpace) {
-        if (obj[ok] !== undefined && obj[ok] !== null && obj[ok] !== '') return obj[ok];
-      }
-    }
-  }
-  return undefined;
-}
-
-function numVal(obj, ...keys) {
-  const v = val(obj, ...keys);
-  const n = parseFloat(v);
-  return isNaN(n) ? 0 : n;
-}
-function fmt(val, decimals = 2) {
-  return Number(val).toLocaleString('fr-FR', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals
-  });
-}
-
-function escH(str) {
-  return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
+// --- 3. UTILITAIRES ---
 function showAlert(type, msg) {
-  const el = document.getElementById('alert-banner');
-  el.textContent = msg;
-  el.className = 'alert-banner show ' + type;
+  const banner = document.getElementById('alert-banner');
+  if (banner) {
+    banner.className = `alert-banner ${type}`;
+    banner.textContent = msg;
+    banner.style.display = 'block';
+  }
 }
 
-// ═══════════════════════════════════════════════
-//  MOCK DATA (demo si API indisponible)
-// ═══════════════════════════════════════════════
-function getMockData() {
-  return {
-    "PORTFOLIO": [
-      { "Ticker": "EPA:AI", "Nom": "L'Air Liquide", "Quantité": 10, "PRU (€)": 159.09, "Cours (€)": 173.76, "Var. Jour": -0.0103, "Valeur (€)": 1737.6, "PV (€)": 146.7, "PV (%)": 0.0922, "Poids(%)": 0.3141, "Secteur": "Industrie", "Marge de Sécurité (%)": 0.1246, "Signal": "Opportunite" },
-      { "Ticker": "EPA:ALSTI", "Nom": "Stif France SAS", "Quantité": 5, "PRU (€)": 68.34, "Cours (€)": 60.4, "Var. Jour": 0.0033, "Valeur (€)": 302, "PV (€)": -39.7, "PV (%)": -0.1161, "Poids(%)": 0.0546, "Secteur": "Énergie", "Marge de Sécurité (%)": 0.1611, "Signal": "Opportunite" },
-      { "Ticker": "EPA:PCEU", "Nom": "Amundi MSCI Europe ETF", "Quantité": 36, "PRU (€)": 36.81, "Cours (€)": 38.06, "Var. Jour": -0.0016, "Valeur (€)": 1370.16, "PV (€)": 45, "PV (%)": 0.0339, "Poids(%)": 0.2477, "Secteur": "ETF Europe", "Marge de Sécurité (%)": null, "Signal": "--" },
-      { "Ticker": "EPA:ESE", "Nom": "BNP Paribas S&P 500 ETF", "Quantité": 72, "PRU (€)": 29.85, "Cours (€)": 29.46, "Var. Jour": -0.0003, "Valeur (€)": 2121.12, "PV (€)": -28.08, "PV (%)": -0.0130, "Poids(%)": 0.3835, "Secteur": "ETF USA", "Marge de Sécurité (%)": null, "Signal": "--" }
-    ],
-    "Santé PEA": [
-      { "Ticker": "EPA:AI", "Nom": "L'Air Liquide", "Secteur": "Industrie", "Poids réel": 0.3141, "Statut": "🔴 Risque critique" },
-      { "Ticker": "EPA:ALSTI", "Nom": "Stif France SAS", "Secteur": "Énergie", "Poids réel": 0.0546, "Statut": "✅ OK" },
-      { "Ticker": "EPA:CAP", "Nom": "Capgemini SE", "Secteur": "Tech", "Poids réel": null, "Statut": "— Watchlist" },
-      { "Ticker": "EPA:SU", "Nom": "Schneider Electric SE", "Secteur": "Industrie", "Poids réel": null, "Statut": "— Watchlist" }
-    ],
-    "Secteurs": [
-      { "Secteur": "Industrie", "Valeur (€)": 1737.6, "Poids (%)": 0.3141, "PV (€)": 146.7, "PV (%)": 0.0922, "⚠️ Alerte": "🟡 Surveiller" },
-      { "Secteur": "Énergie", "Valeur (€)": 302, "Poids (%)": 0.0546, "PV (€)": -39.7, "PV (%)": -0.1161, "⚠️ Alerte": "✅ OK" },
-      { "Secteur": "ETF Europe", "Valeur (€)": 1370.16, "Poids (%)": 0.2477, "PV (€)": 45, "PV (%)": 0.0339, "⚠️ Alerte": "✅ OK" },
-      { "Secteur": "ETF USA", "Valeur (€)": 2121.12, "Poids (%)": 0.3835, "PV (€)": -28.08, "PV (%)": -0.0130, "⚠️ Alerte": "🔴 Surexposé" }
-    ],
-    "Historique_Patrimoine": [
-      { "📅 Date": "2026-02-20T14:38:45", "💶 Valeur Totale (€)": 5555.08, "📈 Variation (€)": 0 },
-      { "📅 Date": "2026-02-20T15:16:27", "💶 Valeur Totale (€)": 5555.08, "📈 Variation (€)": 0 },
-      { "📅 Date": "2026-02-22T14:24:13", "💶 Valeur Totale (€)": 5530.88, "📈 Variation (€)": -24.2 },
-      { "📅 Date": "2026-02-23T10:00:00", "💶 Valeur Totale (€)": 5530.88, "📈 Variation (€)": 0 }
-    ]
-  };
-}
-
-// ═══════════════════════════════════════════════
-//  APPS SCRIPT FORMAT HELPER
-// If your Apps Script returns a different JSON structure,
-// the dashboard auto-adapts thanks to flexible key mapping.
-// Expected structure from Apps Script:
-// { "PORTFOLIO": [...], "Santé PEA": [...], "Secteurs": [...], "Historique_Patrimoine": [...] }
-// Each array item is an object where keys = column headers from Google Sheets
-// ═══════════════════════════════════════════════
+// Initialisation au chargement de la page
+window.onload = () => {
+  const savedUrl = localStorage.getItem('pea_api_url');
+  const savedKey = localStorage.getItem('pea_api_key');
+  if (savedUrl && savedKey) {
+    document.getElementById('api-url').value = savedUrl;
+    document.getElementById('api-key').value = savedKey;
+    document.getElementById('remember-me').checked = true;
+  }
+};
 </script>
 </body>
 </html>
